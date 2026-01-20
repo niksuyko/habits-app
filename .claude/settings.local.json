@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx expo start:*)",
+      "Bash(npm start)",
+      "Bash(timeout /t 5 /nobreak)",
+      "Bash(dir \"c:\\\\Users\\\\nsuyk\\\\habits\\\\habit-app\" /s /b /ad)",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}
