@@ -4,9 +4,11 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import 'react-native-reanimated';
+import { useEffect } from 'react';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { DatabaseProvider } from '@/context/database-context';
+import { requestNotificationPermissions } from '@/utils/notifications';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -14,6 +16,10 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+
+  useEffect(() => {
+    requestNotificationPermissions();
+  }, []);
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

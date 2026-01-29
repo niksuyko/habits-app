@@ -5,7 +5,8 @@
       "Bash(npm start)",
       "Bash(timeout /t 5 /nobreak)",
       "Bash(dir \"c:\\\\Users\\\\nsuyk\\\\habits\\\\habit-app\" /s /b /ad)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npx expo install expo-notifications)"
     ]
   }
 }

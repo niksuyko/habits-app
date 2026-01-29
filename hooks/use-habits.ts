@@ -34,9 +34,7 @@ export function useHabitsForDate(date: Date) {
     if (!db) return;
     setIsLoading(true);
     try {
-      console.log('[useHabitsForDate] Refreshing for date:', dateString);
       const data = await getHabitsForDate(db, date);
-      console.log('[useHabitsForDate] Got habits:', data.length, data.map(h => ({ name: h.name, type: h.scheduleType, completed: h.completed })));
       setHabits(data);
     } finally {
       setIsLoading(false);
@@ -55,20 +53,12 @@ export function useHabitsForDate(date: Date) {
       const habit = habits.find((h) => h.id === habitId);
       if (!habit) return;
 
-      console.log('[HabitToggle] start', {
-        habitId,
-        completed: habit.completed,
-        date: formatDateString(date),
-      });
       if (habit.completed) {
         await uncompleteHabit(db, habitId, date);
-        console.log('[HabitToggle] uncomplete', { habitId });
       } else {
         await completeHabit(db, habitId, date);
-        console.log('[HabitToggle] complete', { habitId });
       }
       await refresh();
-      console.log('[HabitToggle] refreshed', { habitId });
     },
     [db, habits, date, refresh]
   );

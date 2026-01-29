@@ -1,0 +1,40 @@
+Privacy Policy for Habits
+
+Last updated: January 2025
+
+Overview
+
+Habits is a personal habit tracking application. Your privacy is important to us, and we want to be transparent about how the app handles your data.
+
+Data Collection
+
+Habits does NOT collect, transmit, or share any personal data. All information you enter into the app (habit names, completion records, and preferences) is stored locally on your device only.
+
+Data Storage
+
+- All data is stored locally on your device using SQLite database
+- No data is sent to external servers
+- No cloud sync or backup services are used
+- No account creation is required
+
+Third-Party Services
+
+Habits does not integrate with any third-party analytics, advertising, or tracking services. The app does not contain ads.
+
+Notifications
+
+The app may request permission to send local notifications to remind you about your habits. These notifications are scheduled and delivered entirely on your device. No notification data is transmitted externally.
+
+Data Deletion
+
+Since all data is stored locally on your device, you can delete all app data by:
+- Deleting individual habits within the app
+- Uninstalling the app from your device
+
+Children's Privacy
+
+Habits does not knowingly collect any information from children under 13 years of age.
+
+Changes to This Policy
+
+We may update this privacy policy from time to time. Any changes will be reflected in the "Last updated" date above.

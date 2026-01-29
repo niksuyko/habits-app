@@ -1,10 +1,8 @@
 import { useCustomHabits, useDailyHabits, useHabitsForDate, useHabitStats, useIntervalHabits } from '@/hooks/use-habits';
-import { clearAllData } from '@/database/habit-repository';
-import { useDatabase } from '@/context/database-context';
 import { formatDateString } from '@/database/database';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
-import { Alert, Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
@@ -15,6 +13,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Circle, Svg } from 'react-native-svg';
+import { useDatabase } from '@/context/database-context';
+import { scheduleDailyReminder } from '@/utils/notifications';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -177,41 +177,28 @@ const WeekIndicator = ({ weekProgress }: { weekProgress?: boolean[] }) => {
   );
 };
 
-const HabitItem = ({ habit, isCompleted = false, onAnimationStart, onAnimationComplete, onLog }: {
+const HabitItem = ({ habit, isCompleted = false, onAnimationStart, onAnimationComplete }: {
   habit: Habit;
   isCompleted?: boolean;
   onAnimationStart?: () => void;
   onAnimationComplete?: () => void;
-  onLog?: (event: string, payload?: Record<string, unknown>) => void;
 }) => {
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const logSwipeEvent = useCallback((event: string, payload?: Record<string, unknown>) => {
-    if (onLog) {
-      onLog(event, payload);
-    }
-  }, [onLog]);
 
   // Shared values for swipe and collapse animation
   const translateX = useSharedValue(0);
-  const isActive = useSharedValue(false);
   const itemHeight = useSharedValue<number | null>(null);
   const opacity = useSharedValue(1);
   const marginBottom = useSharedValue(12); // matches gap in habitsList
 
   const SWIPE_THRESHOLD = 120; // pixels needed to complete swipe
 
-  const resetAnimation = (reason: string) => {
+  const resetAnimation = () => {
     'worklet';
-    runOnJS(logSwipeEvent)('reset', {
-      id: habit.id,
-      reason,
-      translateX: translateX.value,
-    });
     translateX.value = withTiming(0, {
       duration: 200,
       easing: Easing.out(Easing.ease)
     });
-    isActive.value = false;
   };
 
   const gesture = useMemo(() => {
@@ -224,9 +211,6 @@ const HabitItem = ({ habit, isCompleted = false, onAnimationStart, onAnimationCo
       .maxPointers(1)
       .activeOffsetX(10) // Start recognizing after 10px horizontal movement
       .failOffsetY([-20, 20]) // Fail if vertical movement exceeds 20px (allow scrolling)
-      .onStart(() => {
-        isActive.value = true;
-      })
       .onUpdate((event) => {
         // Only allow swiping right (positive X)
         if (event.translationX > 0) {
@@ -238,14 +222,7 @@ const HabitItem = ({ habit, isCompleted = false, onAnimationStart, onAnimationCo
         }
       })
       .onEnd((event) => {
-        runOnJS(logSwipeEvent)('pan-end', {
-          id: habit.id,
-          translationX: event.translationX,
-          threshold: SWIPE_THRESHOLD,
-          width: dimensions.width,
-        });
         if (event.translationX >= SWIPE_THRESHOLD) {
-          runOnJS(logSwipeEvent)('threshold-met', { id: habit.id });
           // Notify that animation is starting (hide from list immediately)
           if (onAnimationStart) {
             runOnJS(onAnimationStart)();
@@ -258,10 +235,6 @@ const HabitItem = ({ habit, isCompleted = false, onAnimationStart, onAnimationCo
               easing: Easing.out(Easing.ease),
             },
             (finished) => {
-              runOnJS(logSwipeEvent)('slide-out-finished', {
-                id: habit.id,
-                finished,
-              });
               if (finished) {
                 // After slide out, collapse the height
                 itemHeight.value = withTiming(0, {
@@ -274,7 +247,6 @@ const HabitItem = ({ habit, isCompleted = false, onAnimationStart, onAnimationCo
                   easing: Easing.out(Easing.ease),
                 }, (collapseFinished) => {
                   if (collapseFinished && onAnimationComplete) {
-                    runOnJS(logSwipeEvent)('collapse-finished', { id: habit.id });
                     runOnJS(onAnimationComplete)();
                   }
                 });
@@ -282,24 +254,16 @@ const HabitItem = ({ habit, isCompleted = false, onAnimationStart, onAnimationCo
             }
           );
         } else {
-          runOnJS(logSwipeEvent)('threshold-not-met', { id: habit.id });
           // Swipe not far enough - snap back
-          resetAnimation('threshold');
+          resetAnimation();
         }
       })
-      .onFinalize((event, success) => {
-        runOnJS(logSwipeEvent)('finalize', {
-          id: habit.id,
-          success,
-          translationX: event.translationX,
-          translateX: translateX.value,
-        });
+      .onFinalize(() => {
         if (translateX.value < SWIPE_THRESHOLD) {
-          runOnJS(logSwipeEvent)('finalize-reset', { id: habit.id });
-          resetAnimation('finalize');
+          resetAnimation();
         }
       });
-  }, [habit.id, onAnimationStart, onAnimationComplete, logSwipeEvent, dimensions.width, dimensions.height, isCompleted]);
+  }, [habit.id, onAnimationStart, onAnimationComplete, dimensions.width, dimensions.height, isCompleted]);
 
   const animatedContainerStyle = useAnimatedStyle(() => {
     return {
@@ -327,7 +291,6 @@ const HabitItem = ({ habit, isCompleted = false, onAnimationStart, onAnimationCo
     const { width, height } = event.nativeEvent.layout;
     if (dimensions.height === 0) {
       setDimensions({ width, height });
-      logSwipeEvent('layout', { id: habit.id, width, height });
       // Initialize the height for animation (only if not already set)
       if (itemHeight.value === null) {
         itemHeight.value = height;
@@ -383,7 +346,6 @@ const HabitItem = ({ habit, isCompleted = false, onAnimationStart, onAnimationCo
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { db } = useDatabase();
   const [activeTab, setActiveTab] = useState<'today' | 'weekly'>('today');
   const [selectedDay, setSelectedDay] = useState<number>(new Date().getDay()); // Current day
   const [scheduleType, setScheduleType] = useState<HabitScheduleType>('custom');
@@ -393,12 +355,12 @@ export default function HomeScreen() {
   const [animatingHabitIds, setAnimatingHabitIds] = useState<Set<string>>(new Set());
 
   // Database hooks
+  const { db } = useDatabase();
   const [today, setToday] = useState(() => new Date());
-  const [isDebugMode, setIsDebugMode] = useState(false); // Track if date was manually set for testing
-  const { habits: todayHabits, isLoading: todayLoading, toggleHabit, refresh: refreshToday } = useHabitsForDate(today);
-  const { habits: dailyHabitsData, isLoading: dailyLoading, refresh: refreshDaily } = useDailyHabits();
-  const { habits: customHabitsData, isLoading: customLoading, refresh: refreshCustom } = useCustomHabits();
-  const { habits: intervalHabitsData, isLoading: intervalLoading, refresh: refreshInterval } = useIntervalHabits(today);
+  const { habits: todayHabits, toggleHabit, refresh: refreshToday } = useHabitsForDate(today);
+  const { habits: dailyHabitsData, refresh: refreshDaily } = useDailyHabits();
+  const { habits: customHabitsData, refresh: refreshCustom } = useCustomHabits();
+  const { habits: intervalHabitsData, refresh: refreshInterval } = useIntervalHabits(today);
   const { dailyStreak, refresh: refreshStats } = useHabitStats(undefined, today);
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -414,22 +376,21 @@ export default function HomeScreen() {
   // Refresh data when screen comes into focus (after adding a habit)
   useFocusEffect(
     useCallback(() => {
-      // Only reset to current date if not in debug mode
-      if (!isDebugMode) {
-        setToday(new Date());
-      }
+      setToday(new Date());
       refreshToday();
       refreshDaily();
       refreshCustom();
       refreshInterval();
       refreshStats();
-    }, [isDebugMode, refreshToday, refreshDaily, refreshCustom, refreshInterval, refreshStats])
+      // Reschedule notification with current uncompleted count
+      if (db) {
+        scheduleDailyReminder(db);
+      }
+    }, [refreshToday, refreshDaily, refreshCustom, refreshInterval, refreshStats, db])
   );
 
-  // Move to the next day at midnight (only if not in debug mode)
+  // Move to the next day at midnight
   React.useEffect(() => {
-    if (isDebugMode) return; // Don't auto-advance when testing
-
     const now = new Date();
     const nextMidnight = new Date(
       now.getFullYear(),
@@ -442,46 +403,7 @@ export default function HomeScreen() {
     }, timeoutMs);
 
     return () => clearTimeout(timer);
-  }, [today, isDebugMode]);
-
-  // Debug: Skip to next day (simulates midnight transition)
-  const skipToNextDay = useCallback(() => {
-    setIsDebugMode(true); // Enter debug mode to prevent auto-reset
-    const nextDay = new Date(today);
-    nextDay.setDate(nextDay.getDate() + 1);
-    nextDay.setHours(0, 0, 0, 0); // Set to midnight of next day
-    setToday(nextDay);
-    console.log('[Debug] Skipped to:', nextDay.toDateString());
   }, [today]);
-
-  // Debug: Reset all data
-  const resetDebugData = useCallback(() => {
-    if (!db) return;
-    Alert.alert(
-      'Reset All Data',
-      'This will delete all habits and completions. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            await clearAllData(db);
-            setIsDebugMode(false);
-            setToday(new Date());
-            setAnimatingHabitIds(new Set());
-            setShowCompleted(false);
-            refreshToday();
-            refreshDaily();
-            refreshCustom();
-            refreshInterval();
-            refreshStats();
-            console.log('[Debug] Reset all data');
-          },
-        },
-      ]
-    );
-  }, [db, refreshToday, refreshDaily, refreshCustom, refreshInterval, refreshStats]);
 
   // Convert database habits to UI format
   const habits: Habit[] = todayHabits.map(h => ({
@@ -571,15 +493,19 @@ export default function HomeScreen() {
   // Called when swipe animation starts - mark as animating to prevent flicker in completed section
   const onHabitAnimationStart = useCallback((id: string) => {
     setAnimatingHabitIds(prev => new Set(prev).add(id));
-    console.log('[HabitSwipe] animation-start', { id });
   }, []);
 
   // Called when swipe animation completes - persist to database
   const onHabitAnimationComplete = useCallback((id: string) => {
-    console.log('[HabitSwipe] animation-complete', { id });
     // Small delay to ensure the collapse animation has visually completed
     setTimeout(() => {
-      toggleHabit(id).finally(() => refreshStats());
+      toggleHabit(id).finally(() => {
+        refreshStats();
+        // Reschedule notification with updated uncompleted count
+        if (db) {
+          scheduleDailyReminder(db);
+        }
+      });
       // Remove from animating set after DB update
       setTimeout(() => {
         setAnimatingHabitIds(prev => {
@@ -589,11 +515,7 @@ export default function HomeScreen() {
         });
       }, 50);
     }, 50);
-  }, [toggleHabit]);
-
-  const logSwipeEvent = useCallback((event: string, payload?: Record<string, unknown>) => {
-    console.log(`[HabitSwipe] ${event}`, payload ?? {});
-  }, []);
+  }, [toggleHabit, db]);
 
   const renderCircularProgress = () => {
     const size = 180;
@@ -966,25 +888,6 @@ export default function HomeScreen() {
                     <Text style={styles.todayHeaderLogo}>habits</Text>
                     <View style={styles.todayHeaderRight}>
                       <Text style={styles.todayHeaderDate}>{currentDate}</Text>
-                      {/* Debug: Skip to next day button */}
-                      <View style={styles.debugButtonRow}>
-                        <TouchableOpacity
-                          style={styles.debugSkipButton}
-                          onPress={skipToNextDay}
-                          activeOpacity={0.7}
-                        >
-                          <Text style={styles.debugSkipButtonText}>Skip →</Text>
-                        </TouchableOpacity>
-                        {isDebugMode && (
-                          <TouchableOpacity
-                            style={styles.debugResetButton}
-                            onPress={resetDebugData}
-                            activeOpacity={0.7}
-                          >
-                            <Text style={styles.debugResetButtonText}>Reset</Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
                     </View>
                   </View>
 
@@ -1016,7 +919,6 @@ export default function HomeScreen() {
                           isCompleted={false}
                           onAnimationStart={() => onHabitAnimationStart(habit.id)}
                           onAnimationComplete={() => onHabitAnimationComplete(habit.id)}
-                          onLog={logSwipeEvent}
                         />
                       ))}
                   </View>
@@ -1028,7 +930,7 @@ export default function HomeScreen() {
                       isExpanded={showCompleted}
                       onToggle={() => setShowCompleted(!showCompleted)}
                       renderHabitItem={(habit) => (
-                        <HabitItem key={habit.id} habit={habit} isCompleted={true} onLog={logSwipeEvent} />
+                        <HabitItem key={habit.id} habit={habit} isCompleted={true} />
                       )}
                     />
                   )}
@@ -1743,37 +1645,6 @@ const styles = StyleSheet.create({
   editIndicatorTextSmall: {
     fontSize: 11,
     color: '#8BBFB8',
-    fontWeight: '600',
-  },
-  debugButtonRow: {
-    flexDirection: 'row',
-    marginTop: 8,
-    gap: 8,
-  },
-  debugSkipButton: {
-    backgroundColor: '#FFE4B5',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#DEB887',
-  },
-  debugSkipButtonText: {
-    fontSize: 12,
-    color: '#8B4513',
-    fontWeight: '600',
-  },
-  debugResetButton: {
-    backgroundColor: '#E8E8E8',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#CCC',
-  },
-  debugResetButtonText: {
-    fontSize: 12,
-    color: '#666',
     fontWeight: '600',
   },
 });

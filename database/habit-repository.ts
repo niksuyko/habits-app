@@ -53,10 +53,6 @@ async function autoAdvanceOverdueIntervalHabits(
     const newDueDate = new Date(year, month - 1, day);
     newDueDate.setDate(newDueDate.getDate() + (intervalsToAdd * habit.interval_days));
 
-    if (__DEV__) {
-      console.log('[autoAdvance] Advancing habit', habit.habit_id, 'from', habit.next_due, 'to', formatDateString(newDueDate), 'daysPassed:', daysPassed, 'intervalsToAdd:', intervalsToAdd);
-    }
-
     const lastDueDate = new Date(newDueDate);
     lastDueDate.setDate(lastDueDate.getDate() - habit.interval_days);
 
@@ -133,15 +129,6 @@ export async function getHabitsForDate(
   // Auto-advance overdue interval habits
   await autoAdvanceOverdueIntervalHabits(db, date);
 
-  // Debug: Check interval habit states
-  if (__DEV__) {
-    const intervalStates = await db.getAllAsync<{ habit_id: string; next_due: string; reschedule_if_missed: number }>(
-      `SELECT habit_id, next_due, reschedule_if_missed FROM interval_habit_state`
-    );
-    console.log('[getHabitsForDate] Query date:', dateString, 'dayOfWeek:', dayOfWeek);
-    console.log('[getHabitsForDate] Interval states:', intervalStates);
-  }
-
   const rows = await db.getAllAsync<HabitRow & { completed: number }>(
     `SELECT
       h.id,
@@ -186,10 +173,6 @@ export async function getHabitsForDate(
     ORDER BY h.created_at ASC`,
     [dateString, dayOfWeek, dateString, dateString, dateString, dateString, dateString, dateString]
   );
-
-  if (__DEV__) {
-    console.log('[getHabitsForDate] Found habits:', rows.length, rows.map(r => ({ name: r.name, type: r.schedule_type })));
-  }
 
   return rows.map((row) => ({
     ...mapRowToHabit(row),
@@ -355,18 +338,6 @@ export async function deleteHabit(
   await db.runAsync(`DELETE FROM habits WHERE id = ?`, [habitId]);
 }
 
-// Delete all data (debug reset)
-export async function clearAllData(
-  db: SQLite.SQLiteDatabase
-): Promise<void> {
-  await db.execAsync(`
-    DELETE FROM habit_completions;
-    DELETE FROM habit_days;
-    DELETE FROM interval_habit_state;
-    DELETE FROM habits;
-  `);
-}
-
 // Get week progress for a habit (7 days starting from weekStartDate)
 export async function getWeekProgress(
   db: SQLite.SQLiteDatabase,
@@ -443,13 +414,6 @@ export async function getDailyCompletionStreak(
   const isCompleteDay = async (date: Date) => {
     const habits = await getHabitsForDate(db, date);
     const completedCount = habits.filter((habit) => habit.completed).length;
-    if (__DEV__) {
-      console.log('[DailyStreak] day-check', {
-        date: formatDateString(date),
-        due: habits.length,
-        completed: completedCount,
-      });
-    }
     return habits.length > 0 && completedCount === habits.length;
   };
 
@@ -470,9 +434,6 @@ export async function getDailyCompletionStreak(
     complete = await isCompleteDay(cursor);
   }
 
-  if (__DEV__) {
-    console.log('[DailyStreak] result', { streak });
-  }
   return streak;
 }
 
